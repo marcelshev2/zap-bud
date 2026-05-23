@@ -5,6 +5,7 @@ import {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   downloadMediaMessage,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import pino from 'pino';
@@ -50,6 +51,9 @@ export async function start() {
     printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: false,
+    browser: Browsers.ubuntu('Chrome'),
+    connectTimeoutMs: 60000,
+    retryRequestDelayMs: 2000,
   });
 
   sock.ev.on('creds.update', saveCreds);
