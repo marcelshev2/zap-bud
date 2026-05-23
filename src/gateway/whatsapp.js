@@ -65,9 +65,9 @@ export async function start() {
       qrcode.generate(qr, { small: true });
     }
     if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      logger.warn({ shouldReconnect, reason: lastDisconnect?.error?.message }, 'connection closed');
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      logger.warn({ shouldReconnect, reason: lastDisconnect?.error?.message, statusCode }, 'connection closed');
       if (shouldReconnect) start().catch((e) => logger.error({ err: e.message }, 'reconnect failed'));
     } else if (connection === 'open') {
       selfJid = jidNormalizedUser(sock.user.id);
