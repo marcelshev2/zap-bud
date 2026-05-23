@@ -23,17 +23,25 @@ npm install
 ```
 
 ### 3. API keys
-Get the two keys you need:
-- **Anthropic** (Claude — the brain): https://console.anthropic.com/settings/keys
-- **OpenAI** (Whisper — transcription only): https://platform.openai.com/api-keys
 
-Then:
+You need **two** keys:
+
+**A — Anthropic (the brain, required)**
+1. Go to https://console.anthropic.com/settings/keys
+2. Create an account (separate from Claude Pro — different billing)
+3. Add ~$5 of credit
+4. Create a key, copy it
+
+**B — Groq (transcription, free)**
+1. Go to https://console.groq.com/keys
+2. Create a free account — no credit card needed
+3. Create a key, copy it
+
+Then in your terminal, inside the `zap-bud` folder:
 ```bash
 cp .env.example .env
-# edit .env and paste your two keys
 ```
-
-> Your Claude Pro subscription does NOT include API access — the Anthropic console above is a separate, pay-per-use billing account. Add ~$5 of credit and you're good for months.
+Open the `.env` file in any text editor (TextEdit on Mac, Notepad on Windows), paste your two keys where it says `PLACEHOLDER`, and save.
 
 ### 4. Run
 ```bash

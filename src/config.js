@@ -9,11 +9,19 @@ function required(name) {
   return v;
 }
 
+const hasGroq = process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes('PLACEHOLDER');
+const hasOpenAI = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('PLACEHOLDER');
+
+if (!hasGroq && !hasOpenAI) {
+  throw new Error('Set either GROQ_API_KEY (free) or OPENAI_API_KEY in your .env for transcription.');
+}
+
 export const config = {
   anthropicApiKey: required('ANTHROPIC_API_KEY'),
-  openaiApiKey: required('OPENAI_API_KEY'),
+  groqApiKey: hasGroq ? process.env.GROQ_API_KEY : null,
+  openaiApiKey: hasOpenAI ? process.env.OPENAI_API_KEY : null,
   claudeModel: process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001',
-  whisperModel: process.env.WHISPER_MODEL || 'whisper-1',
+  whisperModel: process.env.WHISPER_MODEL || (hasGroq ? 'whisper-large-v3-turbo' : 'whisper-1'),
   triggerEmoji: process.env.TRIGGER_EMOJI || '🤖',
   poolSize: parseInt(process.env.POOL_SIZE_PER_CONTACT || '15', 10),
   defaultLanguage: process.env.DEFAULT_LANGUAGE || 'pt-BR',
