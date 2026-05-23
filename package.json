@@ -1,0 +1,24 @@
+{
+  "name": "zap-bud",
+  "version": "0.1.0",
+  "description": "Personal WhatsApp assistant: voice note transcription + per-contact memory brain",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@whiskeysockets/baileys": "^6.7.16",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "fluent-ffmpeg": "^2.1.3",
+    "openai": "^4.77.0",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
