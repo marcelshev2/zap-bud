@@ -1,97 +1,155 @@
-import {
-  default as makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  jidNormalizedUser,
-  downloadMediaMessage,
-  Browsers,
-} from '@whiskeysockets/baileys';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
-import pino from 'pino';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
-const baileysLogger = pino({ level: 'warn' });
-
-let sock = null;
+let client = null;
 let selfJid = null;
-const listeners = {
-  message: [],
-  reaction: [],
-  ready: [],
-};
+const listeners = { message: [], reaction: [], ready: [] };
 
 export function onMessage(fn) { listeners.message.push(fn); }
 export function onReaction(fn) { listeners.reaction.push(fn); }
 export function onReady(fn) { listeners.ready.push(fn); }
-
 export function getSelfJid() { return selfJid; }
-export function getSocket() { return sock; }
+export function getSocket() { return client; }
 
-export async function sendText(jid, text, quotedMsg) {
-  if (!sock) throw new Error('Socket not ready');
-  const options = quotedMsg ? { quoted: quotedMsg } : {};
-  return sock.sendMessage(jid, { text }, options);
+function toBaileysMsg(msg) {
+  const isGroup = msg.from?.endsWith('@g.us');
+  const remoteJid = msg.fromMe ? (msg.to || msg.from) : msg.from;
+
+  let messageObj = {};
+  switch (msg.type) {
+    case 'chat':
+      messageObj = { conversation: msg.body };
+      break;
+    case 'ptt':
+    case 'audio':
+      messageObj = { audioMessage: { ptt: msg.type === 'ptt' } };
+      break;
+    case 'image':
+      messageObj = { imageMessage: { caption: msg.body || '' } };
+      break;
+    case 'video':
+      messageObj = { videoMessage: { caption: msg.body || '' } };
+      break;
+    case 'document':
+      messageObj = { documentMessage: { caption: msg.body || '' } };
+      break;
+    case 'sticker':
+      messageObj = { stickerMessage: {} };
+      break;
+    default:
+      messageObj = {};
+  }
+
+  return {
+    key: {
+      id: msg.id.id,
+      remoteJid,
+      fromMe: msg.fromMe,
+      participant: isGroup ? msg.author : undefined,
+    },
+    message: messageObj,
+    pushName: msg._data?.notifyName || null,
+    messageTimestamp: msg.timestamp,
+    _wwMsg: msg,
+  };
 }
 
-export async function downloadAudio(message) {
-  const buffer = await downloadMediaMessage(message, 'buffer', {}, { logger: baileysLogger });
-  return buffer;
+export async function sendText(jid, text) {
+  if (!client) throw new Error('Client not ready');
+  return client.sendMessage(jid, text);
+}
+
+export async function downloadAudio(msg) {
+  const wwMsg = msg._wwMsg;
+  if (!wwMsg) throw new Error('No wwebjs message reference');
+  const media = await wwMsg.downloadMedia();
+  if (!media) throw new Error('Could not download media');
+  return Buffer.from(media.data, 'base64');
+}
+
+function makePuppeteerArgs() {
+  return {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--disable-gpu',
+    ],
+    ...(process.env.PUPPETEER_EXECUTABLE_PATH
+      ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH }
+      : {}),
+  };
 }
 
 export async function start() {
-  const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
-  const { version } = await fetchLatestBaileysVersion();
-
-  sock = makeWASocket({
-    version,
-    auth: state,
-    logger: baileysLogger,
-    printQRInTerminal: false,
-    syncFullHistory: false,
-    markOnlineOnConnect: false,
-    browser: Browsers.ubuntu('Chrome'),
-    connectTimeoutMs: 60000,
-    retryRequestDelayMs: 2000,
+  client = new Client({
+    authStrategy: new LocalAuth({ dataPath: config.authDir, clientId: 'default' }),
+    puppeteer: makePuppeteerArgs(),
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  client.on('qr', (qr) => {
+    logger.info('Scan this QR with WhatsApp -> Linked Devices:');
+    qrcode.generate(qr, { small: true });
+  });
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-      logger.info('Scan this QR code with WhatsApp (Settings → Linked Devices):');
-      qrcode.generate(qr, { small: true });
-    }
-    if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      logger.warn({ shouldReconnect, reason: lastDisconnect?.error?.message, statusCode }, 'connection closed');
-      if (shouldReconnect) start().catch((e) => logger.error({ err: e.message }, 'reconnect failed'));
-    } else if (connection === 'open') {
-      selfJid = jidNormalizedUser(sock.user.id);
-      logger.info({ selfJid }, 'whatsapp connected');
-      for (const fn of listeners.ready) fn(selfJid);
+  client.on('ready', () => {
+    selfJid = client.info.wid._serialized;
+    logger.info({ selfJid }, 'whatsapp connected');
+    for (const fn of listeners.ready) fn(selfJid);
+  });
+
+  client.on('message', async (msg) => {
+    if (msg.type === 'reaction') return;
+    const baileysMsg = toBaileysMsg(msg);
+    for (const fn of listeners.message) {
+      try { await fn(baileysMsg); } catch (e) { logger.error({ err: e.message }, 'message handler failed'); }
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
-    for (const msg of messages) {
-      for (const fn of listeners.message) {
-        try { await fn(msg); } catch (e) { logger.error({ err: e.message }, 'message handler failed'); }
-      }
+  client.on('message_create', async (msg) => {
+    if (!msg.fromMe) return;
+    if (msg.type === 'reaction') return;
+    const baileysMsg = toBaileysMsg(msg);
+    for (const fn of listeners.message) {
+      try { await fn(baileysMsg); } catch (e) { logger.error({ err: e.message }, 'message handler failed'); }
     }
   });
 
-  sock.ev.on('messages.reaction', async (reactions) => {
-    for (const reaction of reactions) {
-      for (const fn of listeners.reaction) {
-        try { await fn(reaction); } catch (e) { logger.error({ err: e.message }, 'reaction handler failed'); }
-      }
+  client.on('message_reaction', async (reaction) => {
+    const baileysReaction = {
+      key: {
+        id: reaction.msgId.id,
+        remoteJid: reaction.msgId.remote,
+        fromMe: reaction.msgId.fromMe,
+      },
+      reaction: {
+        key: {
+          fromMe: reaction.senderId === selfJid,
+          id: reaction.id.id,
+        },
+        text: reaction.reaction,
+      },
+    };
+    for (const fn of listeners.reaction) {
+      try { await fn(baileysReaction); } catch (e) { logger.error({ err: e.message }, 'reaction handler failed'); }
     }
   });
 
-  return sock;
+  client.on('auth_failure', (msg) => {
+    logger.error({ msg }, 'auth failure — delete auth/ and restart to re-link');
+  });
+
+  client.on('disconnected', (reason) => {
+    logger.warn({ reason }, 'client disconnected, reinitializing in 5s');
+    setTimeout(() => start().catch(e => logger.error({ err: e.message }, 'reconnect failed')), 5000);
+  });
+
+  await client.initialize();
+  return client;
 }
