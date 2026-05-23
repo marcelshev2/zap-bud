@@ -1,8 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
-const client = new Anthropic({ apiKey: config.anthropicApiKey });
+// When only Groq is configured, use its OpenAI-compatible endpoint for the brain.
+// When Anthropic is configured, it takes priority.
+const groqLLM = config.groqApiKey
+  ? new OpenAI({ apiKey: config.groqApiKey, baseURL: 'https://api.groq.com/openai/v1' })
+  : null;
+const anthropic = config.anthropicApiKey
+  ? new Anthropic({ apiKey: config.anthropicApiKey })
+  : null;
 
 const SYSTEM_BRAIN = `Você é o cérebro pessoal de um assistente de WhatsApp para um único usuário.
 Você recebe um conjunto de mensagens que foram explicitamente marcadas pelo usuário como
@@ -42,24 +50,36 @@ function formatPool(pool, contactName) {
   }).join('\n');
 }
 
+async function callLLM(systemPrompt, userContent, maxTokens) {
+  if (anthropic) {
+    const res = await anthropic.messages.create({
+      model: config.claudeModel,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    });
+    return res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  }
+
+  // Groq (OpenAI-compatible)
+  const res = await groqLLM.chat.completions.create({
+    model: config.claudeModel,
+    max_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ],
+  });
+  return res.choices[0]?.message?.content?.trim() || '';
+}
+
 export async function askBrain({ contactName, pool, question }) {
   const memory = formatPool(pool, contactName);
   const userContent = `Contato: ${contactName}\n\nMemória:\n${memory}\n\nPergunta: ${question}`;
-
   try {
-    const res = await client.messages.create({
-      model: config.claudeModel,
-      max_tokens: 600,
-      system: SYSTEM_BRAIN,
-      messages: [{ role: 'user', content: userContent }],
-    });
-    return res.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim();
+    return await callLLM(SYSTEM_BRAIN, userContent, 600);
   } catch (err) {
-    logger.error({ err: err.message }, 'claude askBrain failed');
+    logger.error({ err: err.message }, 'askBrain failed');
     return 'Não consegui consultar o cérebro agora. Tenta de novo em um instante.';
   }
 }
@@ -67,21 +87,10 @@ export async function askBrain({ contactName, pool, question }) {
 export async function suggestReplies({ contactName, pool, targetMessage }) {
   const memory = formatPool(pool, contactName);
   const userContent = `Contato: ${contactName}\n\nMemória:\n${memory}\n\nMensagem para responder:\n"${targetMessage}"`;
-
   try {
-    const res = await client.messages.create({
-      model: config.claudeModel,
-      max_tokens: 400,
-      system: SYSTEM_SUGGEST,
-      messages: [{ role: 'user', content: userContent }],
-    });
-    return res.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim();
+    return await callLLM(SYSTEM_SUGGEST, userContent, 400);
   } catch (err) {
-    logger.error({ err: err.message }, 'claude suggestReplies failed');
+    logger.error({ err: err.message }, 'suggestReplies failed');
     return 'Não consegui gerar sugestões agora. Tenta de novo em um instante.';
   }
 }
