@@ -27,7 +27,7 @@ export const config = {
   groqApiKey: hasGroq ? process.env.GROQ_API_KEY : null,
   openaiApiKey: hasOpenAI ? process.env.OPENAI_API_KEY : null,
   useGroqForBrain: hasGroq && !hasAnthropic,
-  claudeModel: process.env.CLAUDE_MODEL || (hasAnthropic ? 'claude-haiku-4-5-20251001' : 'llama-3.3-70b-versatile'),
+  claudeModel: process.env.CLAUDE_MODEL || (hasAnthropic ? 'claude-haiku-4-5-20251001' : 'meta-llama/llama-4-scout-17b-16e-instruct'),
   whisperModel: process.env.WHISPER_MODEL || (hasGroq ? 'whisper-large-v3-turbo' : 'whisper-1'),
   triggerEmoji: process.env.TRIGGER_EMOJI || '🤖',
   poolSize: parseInt(process.env.POOL_SIZE_PER_CONTACT || '15', 10),
