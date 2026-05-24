@@ -27,19 +27,6 @@ Regras:
 - Se a memória estiver vazia, diga isso e peça ao usuário para marcar mensagens com 🤖.
 - Nunca invente fatos que não estejam na memória. Se não souber, diga.`;
 
-const SYSTEM_SUGGEST = `Você é o cérebro de um assistente de WhatsApp para um único usuário.
-Você recebe a memória de um contato (mensagens que o usuário marcou como importantes) e a
-mensagem específica que o usuário quer responder.
-
-Sua tarefa: gerar EXATAMENTE 3 sugestões de resposta curtas, uma por linha, numeradas:
-1. <curta e direta>
-2. <neutra/intermediária>
-3. <calorosa ou mais longa>
-
-Regras:
-- Use o idioma da conversa.
-- Combine com o tom e estilo das mensagens da memória.
-- Sem prefixos, sem explicações, sem disclaimers. Apenas as 3 linhas numeradas.`;
 
 function formatPool(pool, contactName) {
   if (!pool.length) return '(memória vazia — peça ao usuário para reagir com 🤖 em mensagens)';
@@ -84,13 +71,3 @@ export async function askBrain({ contactName, pool, question }) {
   }
 }
 
-export async function suggestReplies({ contactName, pool, targetMessage }) {
-  const memory = formatPool(pool, contactName);
-  const userContent = `Contato: ${contactName}\n\nMemória:\n${memory}\n\nMensagem para responder:\n"${targetMessage}"`;
-  try {
-    return await callLLM(SYSTEM_SUGGEST, userContent, 400);
-  } catch (err) {
-    logger.error({ err: err.message }, 'suggestReplies failed');
-    return 'Não consegui gerar sugestões agora. Tenta de novo em um instante.';
-  }
-}

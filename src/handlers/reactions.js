@@ -1,24 +1,13 @@
-import { addToPool, getMessage, getPool, getContact } from '../db/index.js';
-import { sendText, getSelfJid } from '../gateway/whatsapp.js';
-import { suggestReplies } from '../ai/claude.js';
+import { addToPool, getMessage, getContact, updateMessageBody } from '../db/index.js';
+import { transcribeForPool } from './audio.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
 export async function handleReaction(reaction) {
   const { key, reaction: r } = reaction;
   if (!r || !key) return;
-
-  // Only act on the user's own reactions
-  if (!r.key?.fromMe && !key.fromMe) {
-    // Reaction's own key indicates who reacted; we only care about ours
-  }
   if (!r.key?.fromMe) return;
-
-  // Only the configured trigger emoji
-  if (r.text !== config.triggerEmoji) {
-    // ignore — including remove events (r.text === '') by design
-    return;
-  }
+  if (r.text !== config.triggerEmoji) return;
 
   const msgId = key.id;
   const chatJid = key.remoteJid;
@@ -30,30 +19,17 @@ export async function handleReaction(reaction) {
     return;
   }
 
+  if (stored.type === 'audio' && !stored.body) {
+    const transcript = await transcribeForPool(msgId, chatJid);
+    if (transcript) {
+      updateMessageBody(msgId, chatJid, transcript);
+      logger.info({ msgId, chatJid }, 'audio transcribed on reaction');
+    }
+  }
+
   addToPool(msgId, chatJid);
   logger.info({ msgId, chatJid }, 'message added to memory pool');
 
   const contact = getContact(chatJid);
-  const contactName = contact?.name || chatJid.split('@')[0];
-
-  // Auto-suggest replies for that message and deliver to self-chat
-  const selfJid = getSelfJid();
-  if (!selfJid) return;
-
-  const pool = getPool(chatJid);
-  const targetMessage = stored.body || '(mensagem não-textual)';
-
-  const suggestions = await suggestReplies({
-    contactName,
-    pool,
-    targetMessage,
-  });
-
-  const header = `💬 *${contactName}*\n_"${truncate(targetMessage, 120)}"_\n\n`;
-  await sendText(selfJid, header + suggestions);
-}
-
-function truncate(s, n) {
-  if (!s) return '';
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  logger.debug({ contact: contact?.name || chatJid }, 'pool updated');
 }

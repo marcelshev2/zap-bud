@@ -4,6 +4,7 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { SCHEMA } from './schema.js';
 import { logger } from '../logger.js';
+import { normalize, tokens, levenshtein } from '../util/match.js';
 
 fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
@@ -29,14 +30,28 @@ export function upsertContact({ jid, name, isGroup }) {
   upsertContactStmt.run(jid, name || null, isGroup ? 1 : 0, Date.now());
 }
 
-const findContactByNameStmt = db.prepare(`
-  SELECT jid, name, is_group FROM contacts
-  WHERE LOWER(name) = LOWER(?)
-  LIMIT 1
-`);
+const allNamedContactsStmt = db.prepare(
+  `SELECT jid, name, is_group FROM contacts WHERE name IS NOT NULL ORDER BY name`,
+);
 
-export function findContactByName(name) {
-  return findContactByNameStmt.get(name);
+export function searchContacts(query) {
+  const q = normalize(query);
+  const qTokens = tokens(query);
+  const all = allNamedContactsStmt.all();
+
+  for (let tier = 1; tier <= 4; tier++) {
+    const matches = [];
+    for (const c of all) {
+      const cNorm = normalize(c.name);
+      const cTokens = tokens(c.name);
+      if (tier === 1 && cNorm === q) { matches.push(c); continue; }
+      if (tier === 2 && cTokens.some(t => t === q)) { matches.push(c); continue; }
+      if (tier === 3 && cTokens.some(t => t.startsWith(q))) { matches.push(c); continue; }
+      if (tier === 4 && q.length >= 3 && cTokens.some(t => levenshtein(t, q) <= 1)) { matches.push(c); continue; }
+    }
+    if (matches.length) return { tier, matches };
+  }
+  return { tier: 0, matches: [] };
 }
 
 const getContactStmt = db.prepare(`SELECT jid, name, is_group FROM contacts WHERE jid = ?`);
@@ -142,6 +157,23 @@ export function setState(key, value) {
 }
 export function deleteState(key) {
   deleteStateStmt.run(key);
+}
+
+export function getSession() {
+  const row = getStateStmt.get('fsm');
+  if (!row) return { state: 'idle' };
+  try { return JSON.parse(row.value); } catch { return { state: 'idle' }; }
+}
+
+export function saveSession(obj) {
+  setStateStmt.run('fsm', JSON.stringify(obj), Date.now());
+}
+
+const updateMessageBodyStmt = db.prepare(
+  `UPDATE messages SET body = ? WHERE msg_id = ? AND chat_jid = ?`,
+);
+export function updateMessageBody(msgId, chatJid, body) {
+  updateMessageBodyStmt.run(body, msgId, chatJid);
 }
 
 export default db;

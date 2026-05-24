@@ -56,32 +56,43 @@ After that, the session is saved in `./auth/` and you won't need to scan again u
 
 ## How to use
 
-### Voice note transcription
-Just receive any voice note normally. A few seconds later, the transcript shows up in your *Saved Messages* (self-chat) tagged with the sender's name. The other person sees nothing.
-
 ### Adding messages to a contact's memory
 1. Open any chat (1:1 or group).
-2. Long-press a message → react with **🤖**.
-3. The bot saves it to that contact's memory pool.
-4. **Unreact** to hide the bot emoji from the other person — the bot already captured it.
-5. You also get an instant suggestion reply (3 options) in your self-chat for the message you just reacted to.
+2. Long-press a message or voice note → react with **🤖**.
+3. The bot silently saves it to that contact's memory pool (max 15 per contact).
+4. **Unreact** to hide the emoji from the other person — the bot already captured it.
 
-Pool auto-prunes to the **15 most recent** reacted messages per contact.
+Voice notes reacted with 🤖 are automatically transcribed when you first ask a question about that contact.
 
 ### Talking to a contact's brain
-Go to your *Saved Messages* (self-chat) and type:
 
-| You type | What happens |
-|---|---|
-| `ana` or `@ana` | Enter Ana's brain. Bot confirms: *"Falando sobre Ana. Pode perguntar."* |
-| `o que ela disse sobre sexta?` | Bot answers using Ana's memory pool |
-| `me sugere uma resposta` | Bot generates 3 options based on the memory |
-| `/quem` | Shows current active contact |
-| `/lembrar` | Lists everything currently in Ana's memory |
-| `/sair` | Exits Ana's context |
-| `/ajuda` | Help |
+Go to your *Saved Messages* (self-chat). The bot only responds to `/` commands — anything else is ignored.
 
-The active contact resets after 30 minutes of inactivity (configurable in `.env`).
+**Start here:**
+```
+/bud        → opens the command menu
+```
+
+**Finding a contact:**
+```
+/find               ask for a name (step by step)
+/find arthur        search directly — tolerant of typos and accents
+```
+If multiple contacts match, the bot lists them numbered. Reply with the number to pick.
+
+**Once inside a contact's brain:**
+```
+/ask                bot asks for your question (step by step)
+/ask what did she say about friday?    ask directly
+/who                show active contact and memory count
+/memory             list everything in the memory pool
+/find               switch to a different contact
+/back               go up one level
+```
+
+**Navigation:**
+- `/back` always goes up one level (brain → menu → silent)
+- `/bud` or `/help` always returns to the main menu from anywhere
 
 ---
 
@@ -104,13 +115,15 @@ zap-bud/
 │   ├── db/
 │   │   ├── index.js       # SQLite client
 │   │   └── schema.js      # Tables
-│   ├── state/
-│   │   └── session.js     # Stateful "active contact" tracking
+│   ├── util/
+│   │   ├── match.js       # normalize, levenshtein, tokens
+│   │   └── fsm.js         # FSM state constants
 │   └── handlers/
 │       ├── messages.js    # Record every incoming message
-│       ├── reactions.js   # 🤖 reaction handler
-│       ├── audio.js       # Voice note transcription handler
-│       └── selfchat.js    # Brain conversation handler
+│       ├── contacts.js    # Sync Baileys contacts → DB
+│       ├── reactions.js   # 🤖 reaction handler + lazy audio transcription
+│       ├── audio.js       # Cache audio on receive, transcribe on demand
+│       └── selfchat.js    # /bud wizard — FSM brain interface
 ├── data/                  # SQLite file (gitignored)
 └── auth/                  # Baileys session files (gitignored)
 ```
