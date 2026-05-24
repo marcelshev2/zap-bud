@@ -16,6 +16,7 @@ const baileysLogger = pino({ level: 'warn' });
 
 let sock = null;
 let selfJid = null;
+let selfLid = null;
 let isConnecting = false;
 let reconnectTimer = null;
 const listeners = {
@@ -31,6 +32,7 @@ export function onReady(fn) { listeners.ready.push(fn); }
 export function onContacts(fn) { listeners.contacts.push(fn); }
 
 export function getSelfJid() { return selfJid; }
+export function getSelfLid() { return selfLid; }
 export function getSocket() { return sock; }
 
 export async function sendText(jid, text, quotedMsg) {
@@ -88,7 +90,8 @@ export async function start() {
     } else if (connection === 'open') {
       isConnecting = false;
       selfJid = jidNormalizedUser(sock.user.id);
-      logger.info({ selfJid }, 'whatsapp connected');
+      selfLid = sock.user.lid ? jidNormalizedUser(sock.user.lid) : null;
+      logger.info({ selfJid, selfLid }, 'whatsapp connected');
       for (const fn of listeners.ready) fn(selfJid);
     }
   });
@@ -106,6 +109,7 @@ export async function start() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    logger.info({ type }, 'upsert');
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
       for (const fn of listeners.message) {

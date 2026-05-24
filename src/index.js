@@ -1,4 +1,4 @@
-import { start, onMessage, onReaction, onReady, onContacts, getSelfJid } from './gateway/whatsapp.js';
+import { start, onMessage, onReaction, onReady, onContacts, getSelfJid, getSelfLid } from './gateway/whatsapp.js';
 import { recordMessage } from './handlers/messages.js';
 import { handleReaction } from './handlers/reactions.js';
 import { cacheIncomingAudio } from './handlers/audio.js';
@@ -17,7 +17,9 @@ onMessage(async (msg) => {
   if (!record) return;
 
   const selfJid = getSelfJid();
-  const isSelfChat = selfJid && msg.key.remoteJid === selfJid;
+  const selfLid = getSelfLid();
+  const remoteJid = msg.key.remoteJid;
+  const isSelfChat = remoteJid && (remoteJid === selfJid || remoteJid === selfLid);
 
   if (isSelfChat && record.fromMe && record.type === 'text' && record.body) {
     await handleSelfChat(msg, record.body);
